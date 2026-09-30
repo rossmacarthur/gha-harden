@@ -27,6 +27,7 @@ USES_RE = re.compile(
 
 @dataclass
 class Context:
+    upgrade: bool
     skipped: dict[str, str]
     set_status: Callable[[str | None], None]
 
@@ -44,8 +45,21 @@ class ActionSkip:
 
 
 @click.command()
-def main():
+@click.option(
+    "--upgrade",
+    is_flag=True,
+    help="Upgrade refs to the highest version tag",
+)
+def main(upgrade: bool):
     """Harden GitHub Actions workflow references.
+
+    Pinning is enabled by default; upgrading is opt-in.
+
+    \b
+    Options             Unpinned refs       SHA-pinned refs
+    ------------------  ------------------  ------------------
+    (default)           Pin current ref     Unchanged
+    --upgrade           Pin latest version  Pin latest version
 
     Pinned refs are annotated with a version tag when available.
 
@@ -85,6 +99,7 @@ def main():
             live.update(Group(render_status(left=left, right=detail), progress))
 
         ctx = Context(
+            upgrade=upgrade,
             skipped=skipped,
             set_status=set_status,
         )
@@ -206,9 +221,32 @@ def updated_comment(suffix: str, annotation: str | None) -> str:
 
 def update_action(ctx: Context, spec: str, repo: str, ref: str) -> ActionUpdate | ActionSkip | None:
     already_pinned = bool(SHA_RE.fullmatch(ref))
-    sha = ref if already_pinned else resolve_ref_sha(repo, ref)
-    annotation = resolve_sha_tag(repo, sha)
-    return ActionUpdate(uses=f"{spec}@{sha}", annotation=annotation)
+    default_reason = "No suitable version tag"
+
+    if ctx.upgrade:
+        # fetch latest tag and its sha, pin it and annotate with the tag
+        target = get_latest_full_tag(repo)
+        if target is None:
+            return ActionSkip(uses=f"{spec}@{ref}", reason=default_reason)
+        annotation, sha = target
+        return ActionUpdate(uses=f"{spec}@{sha}", annotation=annotation)
+
+    else:
+        sha = ref if already_pinned else resolve_ref_sha(repo, ref)
+        annotation = resolve_sha_tag(repo, sha)
+        return ActionUpdate(uses=f"{spec}@{sha}", annotation=annotation)
+
+
+def get_latest_full_tag(repo: str) -> tuple[str, str] | None:
+    def version_key(tag: dict) -> tuple[int, ...]:
+        return tuple(map(int, tag["name"].removeprefix("v").split(".")))
+
+    tags = (tag for tag in get_tags(repo) if FULL_VERSION_RE.fullmatch(tag["name"]))
+
+    for tag in sorted(tags, key=version_key, reverse=True):
+        return tag["name"], tag["commit"]["sha"]
+
+    return None
 
 
 def resolve_sha_tag(repo: str, sha: str) -> str | None:

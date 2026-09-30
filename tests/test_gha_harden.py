@@ -26,35 +26,56 @@ TAGS = [
 
 
 @pytest.mark.parametrize(
-    ("curr_ref", "exp_ref", "exp_annotation", "exp_skipped"),
+    ("upgrade", "curr_ref", "exp_ref", "exp_annotation", "exp_skipped"),
     [
-        ("v1", OLD_SHA, OLD_TAG, False),
-        ("v2", NEW_SHA, NEW_TAG, False),
-        (OLD_TAG, OLD_SHA, OLD_TAG, False),
-        (NEW_TAG, NEW_SHA, NEW_TAG, False),
-        (OLD_SHA, OLD_SHA, OLD_TAG, False),
-        (NEW_SHA, NEW_SHA, NEW_TAG, False),
-        (BAD_TAG, BAD_TAG, None, True),
-        (BAD_SHA, BAD_SHA, None, False),
+        # no upgrade
+        (False, "v1", OLD_SHA, OLD_TAG, False),
+        (False, "v2", NEW_SHA, NEW_TAG, False),
+        (False, OLD_TAG, OLD_SHA, OLD_TAG, False),
+        (False, NEW_TAG, NEW_SHA, NEW_TAG, False),
+        (False, OLD_SHA, OLD_SHA, OLD_TAG, False),
+        (False, NEW_SHA, NEW_SHA, NEW_TAG, False),
+        (False, BAD_TAG, BAD_TAG, None, True),
+        (False, BAD_SHA, BAD_SHA, None, False),
+        # upgrade
+        (True, "v1", NEW_SHA, NEW_TAG, False),
+        (True, "v2", NEW_SHA, NEW_TAG, False),
+        (True, OLD_TAG, NEW_SHA, NEW_TAG, False),
+        (True, NEW_TAG, NEW_SHA, NEW_TAG, False),
+        (True, OLD_SHA, NEW_SHA, NEW_TAG, False),
+        (True, NEW_SHA, NEW_SHA, NEW_TAG, False),
+        (True, BAD_TAG, NEW_SHA, NEW_TAG, False),
+        (True, BAD_SHA, NEW_SHA, NEW_TAG, False),
     ],
     ids=[
-        "old_short_tag",
-        "new_short_tag",
-        "old_long_tag",
-        "new_long_tag",
-        "old_sha",
-        "new_sha",
-        "bad_tag",
-        "bad_sha",
+        # no upgrade
+        "no_upgrade-old_short_tag",
+        "no_upgrade-new_short_tag",
+        "no_upgrade-old_long_tag",
+        "no_upgrade-new_long_tag",
+        "no_upgrade-old_sha",
+        "no_upgrade-new_sha",
+        "no_upgrade-bad_tag",
+        "no_upgrade-bad_sha",
+        # upgrade
+        "upgrade-old_short_tag",
+        "upgrade-new_short_tag",
+        "upgrade-old_long_tag",
+        "upgrade-new_long_tag",
+        "upgrade-old_sha",
+        "upgrade-new_sha",
+        "upgrade-bad_tag",
+        "upgrade-bad_sha",
     ],
 )
 def test_update_line(
+    upgrade: bool,
     curr_ref: str,
     exp_ref: str,
     exp_annotation: str | None,
     exp_skipped: bool,
 ) -> None:
-    ctx = gha_harden.Context({}, Mock())
+    ctx = gha_harden.Context(upgrade, {}, Mock())
 
     def side_effect(path: str, **kwargs) -> Any:
         try:
