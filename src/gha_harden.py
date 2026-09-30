@@ -1,7 +1,7 @@
 import json
 import re
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
@@ -30,6 +30,8 @@ USES_RE = re.compile(
 class Context:
     upgrade: bool
     pin: bool
+    filter_set: set[str]
+    exclude_set: set[str]
     skipped: dict[str, str]
     set_status: Callable[[str | None], None]
 
@@ -57,6 +59,22 @@ class ActionSkip:
     default=True,
     help="Pin unpinned refs to commit SHAs. Existing SHA pins remain pinned.",
 )
+@click.option(
+    "--filter",
+    "-f",
+    "filters",
+    multiple=True,
+    metavar="ORG[/REPO]",
+    help="Only update matching owners or repositories. Can be repeated.",
+)
+@click.option(
+    "--exclude",
+    "-x",
+    "excludes",
+    multiple=True,
+    metavar="ORG[/REPO]",
+    help="Skip matching owners or repositories. Can be repeated; overrides --filter.",
+)
 @click.argument(
     "paths",
     nargs=-1,
@@ -68,7 +86,13 @@ class ActionSkip:
         path_type=Path,
     ),
 )
-def main(upgrade: bool, pin: bool, paths: tuple[Path, ...]):
+def main(
+    upgrade: bool,
+    pin: bool,
+    filters: tuple[str, ...],
+    excludes: tuple[str, ...],
+    paths: tuple[Path, ...],
+):
     """Harden GitHub Actions workflow references.
 
     Pinning is enabled by default; upgrading is opt-in.
@@ -89,8 +113,13 @@ def main(upgrade: bool, pin: bool, paths: tuple[Path, ...]):
 
     Modifies the supplied files in place. Without paths, discovers YAML files
     under .github/workflows and .github/actions in the current Git repository.
+
+    Use --filter and --exclude to select action owners or repositories.
+    Matching is case-insensitive; excludes take precedence.
     """
     console = Console(highlight=False)
+    filter_set = normalize_filters(filters)
+    exclude_set = normalize_filters(excludes)
 
     try:
         user = gh_api("user")["login"]
@@ -129,6 +158,8 @@ def main(upgrade: bool, pin: bool, paths: tuple[Path, ...]):
         ctx = Context(
             upgrade=upgrade,
             pin=pin,
+            filter_set=filter_set,
+            exclude_set=exclude_set,
             skipped=skipped,
             set_status=set_status,
         )
@@ -153,6 +184,19 @@ def main(upgrade: bool, pin: bool, paths: tuple[Path, ...]):
         f"Updated [bold cyan]{updated_actions}[/bold cyan] actions "
         f"in [bold cyan]{updated_files}[/bold cyan] files"
     )
+
+
+def normalize_filters(filters: Iterable[str]) -> set[str]:
+    normalized = set()
+
+    for f in filters:
+        nf = f.strip().casefold()
+        parts = nf.split("/")
+        if len(parts) > 2 or any(part == "" for part in parts):
+            raise click.ClickException(f"invalid filter {f!r}, expected ORG or ORG/REPO")
+        normalized.add(nf)
+
+    return normalized
 
 
 def get_repo_root() -> Path:
@@ -208,6 +252,8 @@ def update_line(ctx: Context, line: str) -> str:
 
     spec, ref = original.rsplit("@", maxsplit=1)
     repo = "/".join(spec.split("/")[:2])
+    if not matches_filters(ctx, repo):
+        return line
 
     # Special case: dtolnay/rust-toolchain uses tags to specify the toolchain
     # version. Unless the ref is "master" or "v1" we can't pin or upgrade this
@@ -239,6 +285,14 @@ def update_line(ctx: Context, line: str) -> str:
         f"{updated_comment(match['suffix'], result.annotation)}"
         f"{match['newline']}"
     )
+
+
+def matches_filters(ctx: Context, repo: str) -> bool:
+    normalized_repo = repo.casefold()
+    owner, _, _ = normalized_repo.partition("/")
+    if owner in ctx.exclude_set or normalized_repo in ctx.exclude_set:
+        return False
+    return not ctx.filter_set or owner in ctx.filter_set or normalized_repo in ctx.filter_set
 
 
 def updated_comment(suffix: str, annotation: str | None) -> str:

@@ -114,7 +114,7 @@ def test_update_line(
     exp_annotation: str | None,
     exp_skipped: bool,
 ) -> None:
-    ctx = gha_harden.Context(upgrade, pin, {}, Mock())
+    ctx = gha_harden.Context(upgrade, pin, set(), set(), {}, Mock())
 
     def side_effect(path: str, **kwargs) -> Any:
         try:
