@@ -57,7 +57,18 @@ class ActionSkip:
     default=True,
     help="Pin unpinned refs to commit SHAs. Existing SHA pins remain pinned.",
 )
-def main(upgrade: bool, pin: bool):
+@click.argument(
+    "paths",
+    nargs=-1,
+    type=click.Path(
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        path_type=Path,
+    ),
+)
+def main(upgrade: bool, pin: bool, paths: tuple[Path, ...]):
     """Harden GitHub Actions workflow references.
 
     Pinning is enabled by default; upgrading is opt-in.
@@ -76,8 +87,8 @@ def main(upgrade: bool, pin: bool):
 
     Pinned refs are annotated with a version tag when available.
 
-    Discovers and modifies YAML files under .github/workflows and .github/actions
-    in the current Git repository.
+    Modifies the supplied files in place. Without paths, discovers YAML files
+    under .github/workflows and .github/actions in the current Git repository.
     """
     console = Console(highlight=False)
 
@@ -90,8 +101,12 @@ def main(upgrade: bool, pin: bool):
     console.print(f"Logged in to GitHub as [bold cyan]{user}[/bold cyan]")
     console.print()
 
-    root = get_repo_root()
-    selected_paths = get_workflow_paths(root)
+    if paths:
+        root = Path.cwd()
+        selected_paths = paths
+    else:
+        root = get_repo_root()
+        selected_paths = get_workflow_paths(root)
 
     skipped: dict[str, str] = {}
     updated_files = 0
