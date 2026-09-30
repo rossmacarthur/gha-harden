@@ -26,56 +26,95 @@ TAGS = [
 
 
 @pytest.mark.parametrize(
-    ("upgrade", "curr_ref", "exp_ref", "exp_annotation", "exp_skipped"),
+    ("upgrade", "pin", "curr_ref", "exp_ref", "exp_annotation", "exp_skipped"),
     [
-        # no upgrade
-        (False, "v1", OLD_SHA, OLD_TAG, False),
-        (False, "v2", NEW_SHA, NEW_TAG, False),
-        (False, OLD_TAG, OLD_SHA, OLD_TAG, False),
-        (False, NEW_TAG, NEW_SHA, NEW_TAG, False),
-        (False, OLD_SHA, OLD_SHA, OLD_TAG, False),
-        (False, NEW_SHA, NEW_SHA, NEW_TAG, False),
-        (False, BAD_TAG, BAD_TAG, None, True),
-        (False, BAD_SHA, BAD_SHA, None, False),
-        # upgrade
-        (True, "v1", NEW_SHA, NEW_TAG, False),
-        (True, "v2", NEW_SHA, NEW_TAG, False),
-        (True, OLD_TAG, NEW_SHA, NEW_TAG, False),
-        (True, NEW_TAG, NEW_SHA, NEW_TAG, False),
-        (True, OLD_SHA, NEW_SHA, NEW_TAG, False),
-        (True, NEW_SHA, NEW_SHA, NEW_TAG, False),
-        (True, BAD_TAG, NEW_SHA, NEW_TAG, False),
-        (True, BAD_SHA, NEW_SHA, NEW_TAG, False),
+        # no upgrade, no pin
+        (False, False, "v1", "v1", None, False),
+        (False, False, "v2", "v2", None, False),
+        (False, False, OLD_TAG, OLD_TAG, None, False),
+        (False, False, NEW_TAG, NEW_TAG, None, False),
+        (False, False, OLD_SHA, OLD_SHA, OLD_TAG, False),
+        (False, False, NEW_SHA, NEW_SHA, NEW_TAG, False),
+        (False, False, BAD_TAG, BAD_TAG, None, False),
+        (False, False, BAD_SHA, BAD_SHA, None, False),
+        # no upgrade, pin
+        (False, True, "v1", OLD_SHA, OLD_TAG, False),
+        (False, True, "v2", NEW_SHA, NEW_TAG, False),
+        (False, True, OLD_TAG, OLD_SHA, OLD_TAG, False),
+        (False, True, NEW_TAG, NEW_SHA, NEW_TAG, False),
+        (False, True, OLD_SHA, OLD_SHA, OLD_TAG, False),
+        (False, True, NEW_SHA, NEW_SHA, NEW_TAG, False),
+        (False, True, BAD_TAG, BAD_TAG, None, True),
+        (False, True, BAD_SHA, BAD_SHA, None, False),
+        # upgrade, no pin
+        (True, False, "v1", "v2", None, False),
+        (True, False, "v2", "v2", None, False),
+        (True, False, "v1.2", NEW_TAG, None, False),
+        (True, False, OLD_TAG, NEW_TAG, None, False),
+        (True, False, NEW_TAG, NEW_TAG, None, False),
+        (True, False, OLD_SHA, NEW_SHA, NEW_TAG, False),
+        (True, False, NEW_SHA, NEW_SHA, NEW_TAG, False),
+        (True, False, BAD_TAG, NEW_TAG, None, False),
+        (True, False, BAD_SHA, NEW_SHA, NEW_TAG, False),
+        # upgrade, pin
+        (True, True, "v1", NEW_SHA, NEW_TAG, False),
+        (True, True, "v2", NEW_SHA, NEW_TAG, False),
+        (True, True, OLD_TAG, NEW_SHA, NEW_TAG, False),
+        (True, True, NEW_TAG, NEW_SHA, NEW_TAG, False),
+        (True, True, OLD_SHA, NEW_SHA, NEW_TAG, False),
+        (True, True, NEW_SHA, NEW_SHA, NEW_TAG, False),
+        (True, True, BAD_TAG, NEW_SHA, NEW_TAG, False),
+        (True, True, BAD_SHA, NEW_SHA, NEW_TAG, False),
     ],
     ids=[
-        # no upgrade
-        "no_upgrade-old_short_tag",
-        "no_upgrade-new_short_tag",
-        "no_upgrade-old_long_tag",
-        "no_upgrade-new_long_tag",
-        "no_upgrade-old_sha",
-        "no_upgrade-new_sha",
-        "no_upgrade-bad_tag",
-        "no_upgrade-bad_sha",
-        # upgrade
-        "upgrade-old_short_tag",
-        "upgrade-new_short_tag",
-        "upgrade-old_long_tag",
-        "upgrade-new_long_tag",
-        "upgrade-old_sha",
-        "upgrade-new_sha",
-        "upgrade-bad_tag",
-        "upgrade-bad_sha",
+        # no upgrade, no pin
+        "no_upgrade-no_pin-old_short_tag",
+        "no_upgrade-no_pin-new_short_tag",
+        "no_upgrade-no_pin-old_long_tag",
+        "no_upgrade-no_pin-new_long_tag",
+        "no_upgrade-no_pin-old_sha",
+        "no_upgrade-no_pin-new_sha",
+        "no_upgrade-no_pin-bad_tag",
+        "no_upgrade-no_pin-bad_sha",
+        # no upgrade, pin
+        "no_upgrade-pin-old_short_tag",
+        "no_upgrade-pin-new_short_tag",
+        "no_upgrade-pin-old_long_tag",
+        "no_upgrade-pin-new_long_tag",
+        "no_upgrade-pin-old_sha",
+        "no_upgrade-pin-new_sha",
+        "no_upgrade-pin-bad_tag",
+        "no_upgrade-pin-bad_sha",
+        # upgrade, no pin
+        "upgrade-no_pin-old_short_tag",
+        "upgrade-no_pin-new_short_tag",
+        "upgrade-no_pin-minor_tag",
+        "upgrade-no_pin-old_long_tag",
+        "upgrade-no_pin-new_long_tag",
+        "upgrade-no_pin-old_sha",
+        "upgrade-no_pin-new_sha",
+        "upgrade-no_pin-bad_tag",
+        "upgrade-no_pin-bad_sha",
+        # upgrade, pin
+        "upgrade-pin-old_short_tag",
+        "upgrade-pin-new_short_tag",
+        "upgrade-pin-old_long_tag",
+        "upgrade-pin-new_long_tag",
+        "upgrade-pin-old_sha",
+        "upgrade-pin-new_sha",
+        "upgrade-pin-bad_tag",
+        "upgrade-pin-bad_sha",
     ],
 )
 def test_update_line(
     upgrade: bool,
+    pin: bool,
     curr_ref: str,
     exp_ref: str,
     exp_annotation: str | None,
     exp_skipped: bool,
 ) -> None:
-    ctx = gha_harden.Context(upgrade, {}, Mock())
+    ctx = gha_harden.Context(upgrade, pin, {}, Mock())
 
     def side_effect(path: str, **kwargs) -> Any:
         try:
