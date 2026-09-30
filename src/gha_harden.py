@@ -3,6 +3,7 @@ import re
 import subprocess
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from functools import cache
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ from rich.live import Live
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TimeRemainingColumn
 from rich.text import Text
 
+NOW = datetime.now(tz=UTC)
 SHA_RE = re.compile(r"[0-9a-f]{40}", re.IGNORECASE)
 MAJOR_VERSION_RE = re.compile(r"v?\d+")
 FULL_VERSION_RE = re.compile(r"^v?\d+\.\d+\.\d+")
@@ -32,6 +34,7 @@ class Context:
     pin: bool
     filter_set: set[str]
     exclude_set: set[str]
+    min_age: timedelta
     skipped: dict[str, str]
     set_status: Callable[[str | None], None]
 
@@ -48,6 +51,25 @@ class ActionSkip:
     reason: str
 
 
+def parse_min_age(ctx: click.Context, param: click.Parameter, value: str) -> timedelta:
+    msg = "expected hours or days (e.g. 24h or 7d), or 0 to disable"
+    match = re.fullmatch(r"([0-9]+)([hd])?", value)
+    if match is None:
+        raise click.BadParameter(msg)
+
+    n = int(match[1])
+    unit = match[2]
+    if n == 0:
+        return timedelta()
+    if unit is None:
+        raise click.BadParameter(msg)
+    if unit == "h":
+        return timedelta(hours=n)
+    if unit == "d":
+        return timedelta(days=n)
+    raise RuntimeError("unreachable")
+
+
 @click.command()
 @click.option(
     "--upgrade",
@@ -58,6 +80,14 @@ class ActionSkip:
     "--pin/--no-pin",
     default=True,
     help="Pin unpinned refs to commit SHAs. Existing SHA pins remain pinned.",
+)
+@click.option(
+    "--min-age",
+    default="7d",
+    show_default=True,
+    metavar="DURATION",
+    callback=parse_min_age,
+    help="Minimum commit age in hours or days (24h, 7d). Use 0 to disable.",
 )
 @click.option(
     "--filter",
@@ -89,6 +119,7 @@ class ActionSkip:
 def main(
     upgrade: bool,
     pin: bool,
+    min_age: timedelta,
     filters: tuple[str, ...],
     excludes: tuple[str, ...],
     paths: tuple[Path, ...],
@@ -110,6 +141,10 @@ def main(
     exists, the ref is unchanged.
 
     Pinned refs are annotated with a version tag when available.
+
+    New pins and upgraded tags must meet --min-age, using the commit's committer
+    date. Too-new current refs are skipped with a warning; upgrades select the
+    highest eligible version.
 
     Modifies the supplied files in place. Without paths, discovers YAML files
     under .github/workflows and .github/actions in the current Git repository.
@@ -160,6 +195,7 @@ def main(
             pin=pin,
             filter_set=filter_set,
             exclude_set=exclude_set,
+            min_age=min_age,
             skipped=skipped,
             set_status=set_status,
         )
@@ -305,11 +341,13 @@ def updated_comment(suffix: str, annotation: str | None) -> str:
 def update_action(ctx: Context, spec: str, repo: str, ref: str) -> ActionUpdate | ActionSkip | None:
     already_pinned = bool(SHA_RE.fullmatch(ref))
     default_reason = "No suitable version tag"
+    if ctx.min_age > timedelta(0):
+        default_reason += " meeting minimum age"
 
     if ctx.upgrade:
         if ctx.pin or already_pinned:
             # fetch latest tag and its sha, pin it and annotate with the tag
-            target = get_latest_full_tag(repo)
+            target = get_latest_full_tag(ctx, repo)
             if target is None:
                 return ActionSkip(uses=f"{spec}@{ref}", reason=default_reason)
             annotation, sha = target
@@ -318,7 +356,7 @@ def update_action(ctx: Context, spec: str, repo: str, ref: str) -> ActionUpdate 
         else:
             if MAJOR_VERSION_RE.fullmatch(ref):
                 # just fetch the latest major version tag, no annotation
-                tag = get_latest_major_tag(repo, ref)
+                tag = get_latest_major_tag(ctx, repo, ref)
                 if tag is None:
                     return ActionSkip(uses=f"{spec}@{ref}", reason=default_reason)
                 elif tag == ref:
@@ -326,7 +364,7 @@ def update_action(ctx: Context, spec: str, repo: str, ref: str) -> ActionUpdate 
                 return ActionUpdate(uses=f"{spec}@{tag}", annotation=None)
 
             # just fetch the latest tag, no annotation
-            target = get_latest_full_tag(repo)
+            target = get_latest_full_tag(ctx, repo)
             if target is None:
                 return ActionSkip(uses=f"{spec}@{ref}", reason=default_reason)
             tag, _ = target
@@ -349,7 +387,7 @@ def update_action(ctx: Context, spec: str, repo: str, ref: str) -> ActionUpdate 
                 return None
 
 
-def get_latest_major_tag(repo: str, ref: str) -> str | None:
+def get_latest_major_tag(ctx: Context, repo: str, ref: str) -> str | None:
     def version_key(tag: dict) -> int:
         return int(tag["name"].removeprefix("v"))
 
@@ -361,19 +399,23 @@ def get_latest_major_tag(repo: str, ref: str) -> str | None:
     )
 
     for tag in sorted(tags, key=version_key, reverse=True):
-        return tag["name"]
+        details = get_commit_details(repo, tag["commit"]["sha"])
+        if datetime.fromisoformat(details["commit"]["committer"]["date"]) <= NOW - ctx.min_age:
+            return tag["name"]
 
     return None
 
 
-def get_latest_full_tag(repo: str) -> tuple[str, str] | None:
+def get_latest_full_tag(ctx: Context, repo: str) -> tuple[str, str] | None:
     def version_key(tag: dict) -> tuple[int, ...]:
         return tuple(map(int, tag["name"].removeprefix("v").split(".")))
 
     tags = (tag for tag in get_tags(repo) if FULL_VERSION_RE.fullmatch(tag["name"]))
 
     for tag in sorted(tags, key=version_key, reverse=True):
-        return tag["name"], tag["commit"]["sha"]
+        commit = get_commit_details(repo, tag["commit"]["sha"])
+        if datetime.fromisoformat(commit["commit"]["committer"]["date"]) <= NOW - ctx.min_age:
+            return tag["name"], tag["commit"]["sha"]
 
     return None
 

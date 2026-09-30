@@ -1,6 +1,7 @@
 import random
 import subprocess
 from collections.abc import Iterator
+from datetime import timedelta
 from typing import Any
 from unittest.mock import Mock, patch
 
@@ -14,14 +15,15 @@ BAD_SHA = "e" * 40
 OLD_TAG = "v1.0.0"
 NEW_TAG = "v2.10.0"
 BAD_TAG = "v2.4.1"
+THEN = "2023-01-01T00:00:00Z"
 
 TAGS = [
-    {"name": "v3.0.0-rc.1", "commit": {"sha": "c" * 40}},
-    {"name": "v2", "commit": {"sha": NEW_SHA}},
-    {"name": "v2.9.0", "commit": {"sha": "d" * 40}},
-    {"name": NEW_TAG, "commit": {"sha": NEW_SHA}},
-    {"name": "v1", "commit": {"sha": OLD_SHA}},
-    {"name": OLD_TAG, "commit": {"sha": OLD_SHA}},
+    {"name": "v3.0.0-rc.1", "commit": {"sha": "c" * 40, "committer": {"date": THEN}}},
+    {"name": "v2", "commit": {"sha": NEW_SHA, "committer": {"date": THEN}}},
+    {"name": "v2.9.0", "commit": {"sha": "d" * 40, "committer": {"date": THEN}}},
+    {"name": NEW_TAG, "commit": {"sha": NEW_SHA, "committer": {"date": THEN}}},
+    {"name": "v1", "commit": {"sha": OLD_SHA, "committer": {"date": THEN}}},
+    {"name": OLD_TAG, "commit": {"sha": OLD_SHA, "committer": {"date": THEN}}},
 ]
 
 
@@ -114,7 +116,7 @@ def test_update_line(
     exp_annotation: str | None,
     exp_skipped: bool,
 ) -> None:
-    ctx = gha_harden.Context(upgrade, pin, set(), set(), {}, Mock())
+    ctx = gha_harden.Context(upgrade, pin, set(), set(), timedelta(0), {}, Mock())
 
     def side_effect(path: str, **kwargs) -> Any:
         try:
@@ -124,6 +126,14 @@ def test_update_line(
                 "repos/actions/example/commits/v2": {"sha": NEW_SHA},
                 "repos/actions/example/commits/v1.0.0": {"sha": OLD_SHA},
                 "repos/actions/example/commits/v2.10.0": {"sha": NEW_SHA},
+                f"repos/actions/example/commits/{OLD_SHA}": {
+                    "sha": OLD_SHA,
+                    "commit": {"committer": {"date": THEN}},
+                },
+                f"repos/actions/example/commits/{NEW_SHA}": {
+                    "sha": NEW_SHA,
+                    "commit": {"committer": {"date": THEN}},
+                },
             }[path]
         except KeyError:
             raise subprocess.CalledProcessError(1, path)
