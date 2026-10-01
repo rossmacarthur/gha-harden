@@ -32,6 +32,8 @@ gha-harden = "gha_harden:main"
 dev = [
     "coverage",
     "pytest",
+    "ruff",
+    "ty",
 ]
 
 [tool.ruff]

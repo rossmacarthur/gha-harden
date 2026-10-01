@@ -1,0 +1,68 @@
+name: build
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: uv sync --locked
+
+    - name: Ruff format
+      run: uv run --locked ruff format --check
+
+    - name: Ruff check
+      run: uv run --locked ruff check
+
+    - name: Type check
+      run: uv run --locked ty check
+
+    - name: Test
+      run: uv run --locked pytest
+
+  publish:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/')
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+
+    - name: Check tag against package version
+      run: |
+        uv run --no-project python - <<'PY'
+        import os
+        import tomllib
+
+        with open("pyproject.toml", "rb") as f:
+            version = tomllib.load(f)["project"]["version"]
+        tag = os.environ["GITHUB_REF_NAME"]
+        if tag != version:
+            raise SystemExit(f"Tag {tag!r} does not match package version {version!r}")
+        PY
+
+    - name: Build
+      run: uv build
+
+    - name: Publish
+      run: uv publish --trusted-publishing always
