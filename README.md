@@ -116,6 +116,18 @@ gha-harden --upgrade --min-age 0
 **`gha-harden`** requires Python 3.12 or later, and the [GitHub CLI]
 (authenticated).
 
+### From PyPI
+
+Install using [uv]
+```sh
+uv tool install gha-harden
+```
+
+Or just run it directly using **uvx**:
+```sh
+uvx gha-harden --help
+```
+
 ### From source
 
 From a checkout of this repository, install **`gha-harden`** using [uv]:
