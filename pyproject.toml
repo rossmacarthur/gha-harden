@@ -11,7 +11,7 @@ py-modules = ["gha_harden"]
 
 [project]
 name = "gha-harden"
-version = "0.0.0"
+version = "0.1.0"
 description = "Harden GitHub Action workflows by pinning versions"
 readme = "README.md"
 license = "MIT"
